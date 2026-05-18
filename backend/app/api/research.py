@@ -138,8 +138,28 @@ def download_research_pdf(
     from io import BytesIO
     from fastapi.responses import StreamingResponse
 
+    def sanitize_for_pdf(text: str) -> str:
+        # Map common non-latin-1 unicode characters to standard ASCII/latin-1 equivalents
+        replacements = {
+            "\u2018": "'",   # Left single quote
+            "\u2019": "'",   # Right single quote
+            "\u201c": '"',   # Left double quote
+            "\u201d": '"',   # Right double quote
+            "\u2013": "-",   # En dash
+            "\u2014": "--",  # Em dash
+            "\u2022": "*",   # Bullet point
+            "\u2026": "...", # Ellipsis
+            "\u00a0": " ",   # Non-breaking space
+        }
+        for search, replace in replacements.items():
+            text = text.replace(search, replace)
+        return text.encode("latin-1", errors="replace").decode("latin-1")
+
+    # Sanitize markdown to ensure safe character set for fpdf2
+    sanitized_markdown = sanitize_for_pdf(job.report.report_markdown)
+    
     # Convert Markdown to HTML
-    html_content = markdown.markdown(job.report.report_markdown, extensions=['extra', 'tables'])
+    html_content = markdown.markdown(sanitized_markdown, extensions=['extra', 'tables'])
     
     # Wrap in basic HTML structure for PDF styling
     full_html = f"""
