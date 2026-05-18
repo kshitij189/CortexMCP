@@ -1,12 +1,47 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, FileText, Download } from 'lucide-react';
+import { ArrowLeft, FileText, Download, Share2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import api from '../services/api';
+
+const getDomain = (url) => {
+  try {
+    return new URL(url).hostname.replace('www.', '');
+  } catch (e) {
+    return url;
+  }
+};
+
+const hasMatchingLink = (children, domain) => {
+  if (!domain) return false;
+  let found = false;
+  const check = (node) => {
+    if (!node) return;
+    if (typeof node === 'object') {
+      if (node.type === 'a' && node.props?.href?.toLowerCase().includes(domain.toLowerCase())) {
+        found = true;
+      }
+      if (node.props?.children) {
+        if (Array.isArray(node.props.children)) {
+          node.props.children.forEach(check);
+        } else {
+          check(node.props.children);
+        }
+      }
+    }
+  };
+  if (Array.isArray(children)) {
+    children.forEach(check);
+  } else {
+    check(children);
+  }
+  return found;
+};
 
 export default function ReportViewerPage() {
   const { id } = useParams();
   const [job, setJob] = useState(null);
+  const [selectedSource, setSelectedSource] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -155,16 +190,267 @@ export default function ReportViewerPage() {
       )}
 
       {isFinished && hasReport && (
-        <div className="glass p-8 lg:p-12 overflow-hidden">
-          <article className="prose prose-invert prose-primary max-w-none">
-            <ReactMarkdown>{job.report.report_markdown}</ReactMarkdown>
-          </article>
+        <div className="space-y-6">
+          {/* Interactive Source Citation Network */}
+          <div className="glass p-6 glow-primary">
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+                  <Share2 className="w-5 h-5 text-primary-400" />
+                  Interactive Source Citation Network
+                </h2>
+                <p className="text-xs text-white/40 mt-1">
+                  Click on any website node to audit references and highlight matching evidence in the report below.
+                </p>
+              </div>
+              {selectedSource && (
+                <button
+                  onClick={() => setSelectedSource(null)}
+                  className="text-xs text-primary-400 hover:text-primary-300 font-medium transition-colors"
+                >
+                  Clear Selection
+                </button>
+              )}
+            </div>
+            
+            <SourceCitationGraph
+              query={job.job.query}
+              sources={job.sources}
+              selectedSource={selectedSource}
+              onSelectSource={setSelectedSource}
+            />
+          </div>
+
+          {/* Sourced Evidence & Report Body */}
+          <div className="glass p-8 lg:p-12 overflow-hidden">
+            <article className="prose prose-invert prose-primary max-w-none">
+              <ReactMarkdown
+                components={{
+                  a: ({ href, children }) => {
+                    const isHighlighted = selectedSource && href && href.toLowerCase().includes(getDomain(selectedSource.url).toLowerCase());
+                    return (
+                      <a
+                        href={href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className={`transition-all duration-300 font-semibold ${
+                          isHighlighted
+                            ? 'bg-primary-500/20 text-primary-300 ring-2 ring-primary-500/50 rounded px-1.5 py-0.5'
+                            : 'text-primary-400 hover:text-primary-300'
+                        }`}
+                      >
+                        {children}
+                      </a>
+                    );
+                  },
+                  p: ({ children }) => {
+                    const isHighlighted = selectedSource && hasMatchingLink(children, getDomain(selectedSource.url));
+                    return (
+                      <p
+                        className={`transition-all duration-300 border-l-2 pl-3 ${
+                          isHighlighted
+                            ? 'border-primary-500 bg-primary-500/5 py-2 rounded-r-lg shadow-sm shadow-primary-500/5'
+                            : 'border-transparent'
+                        }`}
+                      >
+                        {children}
+                      </p>
+                    );
+                  },
+                  li: ({ children }) => {
+                    const isHighlighted = selectedSource && hasMatchingLink(children, getDomain(selectedSource.url));
+                    return (
+                      <li
+                        className={`transition-all duration-300 border-l-2 pl-3 list-none ${
+                          isHighlighted
+                            ? 'border-primary-500 bg-primary-500/5 py-1 rounded-r-lg shadow-sm shadow-primary-500/5'
+                            : 'border-transparent'
+                        }`}
+                      >
+                        • {children}
+                      </li>
+                    );
+                  }
+                }}
+              >
+                {job.report.report_markdown}
+              </ReactMarkdown>
+            </article>
+          </div>
         </div>
       )}
 
       {isFinished && !hasReport && (
         <div className="glass p-12 text-center text-amber-400">
           <p>The job finished, but no report was generated.</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SourceCitationGraph({ query, sources, selectedSource, onSelectSource }) {
+  const [hoveredNode, setHoveredNode] = useState(null);
+  
+  if (!sources || sources.length === 0) return null;
+  
+  const width = 800;
+  const height = 400;
+  const centerX = width / 2;
+  const centerY = height / 2;
+  const radius = 130;
+  
+  // Arrange nodes in an orbital ring
+  const nodes = sources.map((src, idx) => {
+    const angle = (idx * 2 * Math.PI) / sources.length;
+    return {
+      ...src,
+      x: centerX + radius * Math.cos(angle),
+      y: centerY + radius * Math.sin(angle),
+      domain: getDomain(src.url),
+    };
+  });
+  
+  return (
+    <div className="space-y-4">
+      {/* SVG Canvas */}
+      <div className="relative bg-black/30 border border-white/[0.04] rounded-2xl overflow-hidden aspect-[2/1] w-full max-h-[400px]">
+        <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full select-none">
+          {/* Connector Lines */}
+          {nodes.map((node) => {
+            const isSelected = selectedSource?.id === node.id;
+            const isHovered = hoveredNode?.id === node.id;
+            return (
+              <line
+                key={`line-${node.id}`}
+                x1={centerX}
+                y1={centerY}
+                x2={node.x}
+                y2={node.y}
+                className={`transition-all duration-300 ${
+                  isSelected
+                    ? 'stroke-primary-500 stroke-[3px] opacity-100'
+                    : isHovered
+                    ? 'stroke-primary-400 stroke-[2px] opacity-80'
+                    : 'stroke-white/10 stroke-[1px] opacity-40'
+                }`}
+                strokeDasharray={isSelected ? '5,5' : 'none'}
+              />
+            );
+          })}
+          
+          {/* Central Query Node */}
+          <g className="cursor-pointer">
+            <circle
+              cx={centerX}
+              cy={centerY}
+              r={36}
+              className="fill-primary-950/80 stroke-primary-500 stroke-2 filter drop-shadow-[0_0_12px_rgba(168,85,247,0.4)] transition-all duration-300"
+            />
+            {/* Pulsing Outer Ring */}
+            <circle
+              cx={centerX}
+              cy={centerY}
+              r={44}
+              className="fill-transparent stroke-primary-500/30 stroke-1 animate-pulse"
+            />
+            <text
+              x={centerX}
+              y={centerY + 4}
+              textAnchor="middle"
+              className="fill-primary-300 text-[10px] font-semibold tracking-wider uppercase pointer-events-none"
+            >
+              QUERY
+            </text>
+          </g>
+          
+          {/* Surrounding Source Nodes */}
+          {nodes.map((node) => {
+            const isSelected = selectedSource?.id === node.id;
+            const isHovered = hoveredNode?.id === node.id;
+            const size = isSelected ? 22 : isHovered ? 18 : 14;
+            
+            return (
+              <g
+                key={node.id}
+                className="cursor-pointer"
+                onMouseEnter={() => setHoveredNode(node)}
+                onMouseLeave={() => setHoveredNode(null)}
+                onClick={() => {
+                  onSelectSource(isSelected ? null : node);
+                  // Smoothly scroll to first highlighted element in report
+                  setTimeout(() => {
+                    const firstHighlight = document.querySelector('.border-primary-500');
+                    if (firstHighlight) {
+                      firstHighlight.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                  }, 100);
+                }}
+              >
+                <circle
+                  cx={node.x}
+                  cy={node.y}
+                  r={size}
+                  className={`transition-all duration-300 ${
+                    isSelected
+                      ? 'fill-primary-500 stroke-white stroke-2'
+                      : isHovered
+                      ? 'fill-primary-400 stroke-primary-300 stroke-1'
+                      : node.relevance_score > 0.8
+                      ? 'fill-emerald-500/80 stroke-emerald-400/50 stroke-1'
+                      : 'fill-sky-500/80 stroke-sky-400/50 stroke-1'
+                  }`}
+                />
+                
+                {/* Clean Domain Label Text */}
+                <text
+                  x={node.x}
+                  y={node.y + size + 16}
+                  textAnchor="middle"
+                  className={`text-[9px] font-medium transition-colors duration-300 pointer-events-none ${
+                    isSelected || isHovered
+                      ? 'fill-primary-300 font-semibold'
+                      : 'fill-white/40'
+                  }`}
+                >
+                  {node.domain.length > 20 ? node.domain.substring(0, 17) + '...' : node.domain}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+      
+      {/* Dynamic Detail Card */}
+      {(selectedSource || hoveredNode) && (
+        <div className="glass p-4 rounded-xl border border-primary-500/20 bg-primary-500/[0.02] animate-fade-in">
+          <div className="flex justify-between items-start gap-4">
+            <div className="space-y-1">
+              <span className="text-[10px] uppercase tracking-wider font-semibold text-primary-400">
+                {selectedSource ? 'Selected Reference' : 'Hovered Source'}
+              </span>
+              <h4 className="text-sm font-semibold text-white">
+                {(selectedSource || hoveredNode).title || 'Untitled Source'}
+              </h4>
+              <a
+                href={(selectedSource || hoveredNode).url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-primary-300 hover:underline inline-flex items-center gap-1"
+              >
+                {(selectedSource || hoveredNode).url}
+              </a>
+              <p className="text-xs text-white/50 leading-relaxed mt-2">
+                {(selectedSource || hoveredNode).summary || 'No summary extracted for this source.'}
+              </p>
+            </div>
+            <div className="text-right flex-shrink-0">
+              <span className="text-[10px] text-white/30 block">RELEVANCE</span>
+              <span className="text-lg font-bold text-emerald-400">
+                {Math.round(((selectedSource || hoveredNode).relevance_score || 0.8) * 100)}%
+              </span>
+            </div>
+          </div>
         </div>
       )}
     </div>
