@@ -13,27 +13,27 @@ CortexMCP's architecture utilizes a modern microservice model designed to isolat
 ```mermaid
 graph TD
     %% Clients
-    Client[React Web Dashboard] <-->|HTTP/REST / JWT Auth| API[FastAPI API Gateway]
-    Client <-->|Server-Sent Events SSE| RedisPubSub[Redis Pub/Sub]
+    Client[React Web Dashboard] -->|HTTP/REST / JWT Auth| API[FastAPI API Gateway]
+    RedisPubSub -->|Server-Sent Events SSE| Client
 
     %% Main Application Stack
     subgraph Core Platform
-        API <-->|SQLAlchemy ORM| Postgres[(PostgreSQL DB)]
+        API ---|SQLAlchemy ORM| Postgres[(PostgreSQL DB)]
         API -->|Task Queue| RedisQueue[Redis Celery Broker]
-        CeleryWorker[Celery Background Worker] <-->|Task Execution| RedisQueue
-        CeleryWorker -->|Pub/Sub Event Streaming| RedisPubSub
+        CeleryWorker ---|Task Execution| RedisQueue[Redis Celery Broker]
+        CeleryWorker -->|Pub/Sub Event Streaming| RedisPubSub[Redis Pub/Sub]
     end
 
     %% Pipeline Integrations
     subgraph Research Pipeline Stages
         CeleryWorker -->|1. Web Search| Tavily[Tavily Search API]
         CeleryWorker -->|2. Parallel Scrape| BeautifulSoup[BS4 Scraping Engine]
-        CeleryWorker <-->|3. Embeddings & Deduplication| ChromaDB[(Transient ChromaDB Vector Store)]
-        CeleryWorker <-->|4. LLM Synthesis| GeminiGroq[Multi-Provider LLM: Gemini / Groq Fallback]
+        CeleryWorker -->|3. Embeddings & Deduplication| ChromaDB[(Transient ChromaDB Vector Store)]
+        CeleryWorker -->|4. LLM Synthesis| GeminiGroq[Multi-Provider LLM: Gemini / Groq Fallback]
     end
 
     %% Database relationships
-    CeleryWorker <-->|Write Reports & Logs| Postgres
+    CeleryWorker -->|Write Reports & Logs| Postgres
 ```
 
 ---
