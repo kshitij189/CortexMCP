@@ -58,7 +58,7 @@ def run_research_pipeline(self, job_id: str):
             research_repo.update_job_status(db, job_id, status="SCRAPING", progress=current_progress)
 
         from app.services.llm_service import llm_service
-        from app.prompts.summarize import SUMMARIZE_SYSTEM_PROMPT
+        from app.prompts.summarize import PERSONA_PROMPTS
         from app.services.dedup_service import dedup_service
 
         # 3. Execute Summarization with RAG Deduplication
@@ -72,8 +72,13 @@ def run_research_pipeline(self, job_id: str):
         # Deduplicate and extract highly unique chunks
         unique_context = dedup_service.get_unique_context(job_id, raw_texts)
         
+        # Determine the agent persona to use
+        persona = job.settings.get("persona", "general") if job.settings else "general"
+        research_repo.add_workflow_log(db, job_id, "SUMMARIZE", f"Selected Agent Persona: {persona.upper()}")
+        system_prompt = PERSONA_PROMPTS.get(persona, PERSONA_PROMPTS["general"])
+        
         research_repo.add_workflow_log(db, job_id, "SUMMARIZE", f"Context curated. Sending to LLM for report generation...")
-        report_markdown = llm_service.generate_summary(SUMMARIZE_SYSTEM_PROMPT, unique_context)
+        report_markdown = llm_service.generate_summary(system_prompt, unique_context)
         
         if report_markdown:
             research_repo.create_generated_report(db, job_id, report_markdown)

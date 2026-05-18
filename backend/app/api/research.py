@@ -35,6 +35,7 @@ def start_research(
         user_id=str(current_user.id),
         query=data.query,
         depth=data.depth.value,
+        settings={"persona": data.persona}
     )
 
     # Phase 3: Queue Celery task

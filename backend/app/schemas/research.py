@@ -31,6 +31,7 @@ class JobStatus(str, Enum):
 class ResearchJobCreate(BaseModel):
     query: str = Field(min_length=3, max_length=1000)
     depth: ResearchDepth = ResearchDepth.STANDARD
+    persona: Optional[str] = "general"
 
 
 class ResearchJobResponse(BaseModel):
@@ -43,11 +44,13 @@ class ResearchJobResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     completed_at: Optional[datetime] = None
+    persona: Optional[str] = "general"
 
     model_config = {"from_attributes": True}
 
     @classmethod
     def from_orm_job(cls, job):
+        persona = job.settings.get("persona", "general") if job.settings else "general"
         return cls(
             id=str(job.id),
             query=job.query,
@@ -58,6 +61,7 @@ class ResearchJobResponse(BaseModel):
             created_at=job.created_at,
             updated_at=job.updated_at,
             completed_at=job.completed_at,
+            persona=persona,
         )
 
 

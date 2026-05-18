@@ -12,7 +12,7 @@ from app.models.generated_report import GeneratedReport
 from app.models.workflow_log import WorkflowLog
 
 
-def create_job(db: Session, user_id: str, query: str, depth: str) -> ResearchJob:
+def create_job(db: Session, user_id: str, query: str, depth: str, settings: Optional[dict] = None) -> ResearchJob:
     """Create a new research job."""
     job = ResearchJob(
         user_id=user_id,
@@ -20,6 +20,7 @@ def create_job(db: Session, user_id: str, query: str, depth: str) -> ResearchJob
         depth=depth,
         status="JOB_CREATED",
         progress=0,
+        settings=settings or {},
     )
     db.add(job)
     db.commit()
