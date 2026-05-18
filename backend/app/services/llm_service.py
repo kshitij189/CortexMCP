@@ -24,7 +24,7 @@ class LLMService:
         self.groq_model = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
         
         # Initialize Gemini settings
-        self.gemini_model = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
+        self.gemini_model = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
         if GEMINI_API_KEY:
             genai.configure(api_key=GEMINI_API_KEY)
             
@@ -34,22 +34,40 @@ class LLMService:
         Handles automatic fallbacks for maximum resilience.
         """
         if self.provider == "gemini" and GEMINI_API_KEY:
-            try:
-                print(f"Generating summary using Gemini model: {self.gemini_model}")
-                model = genai.GenerativeModel(
-                    model_name=self.gemini_model,
-                    system_instruction=system_prompt
-                )
-                response = model.generate_content(
-                    f"Here is the context to synthesize:\n\n{context}",
-                    generation_config={"temperature": 0.3}
-                )
-                return response.text
-            except Exception as e:
-                print(f"Gemini generation failed: {e}. Falling back to Groq if available.")
-                if self.groq_client:
-                    return self._generate_groq(system_prompt, context)
-                return f"Error during Gemini generation: {str(e)}"
+            # List of Gemini models to try in sequence of preference
+            gemini_models_to_try = [
+                self.gemini_model,
+                "gemini-2.0-flash",
+                "gemini-flash-latest",
+                "gemini-2.5-flash-lite",
+            ]
+            # De-duplicate while preserving order
+            seen = set()
+            models_to_try = [m for m in gemini_models_to_try if not (m in seen or seen.add(m))]
+            
+            last_error = None
+            for model_name in models_to_try:
+                try:
+                    print(f"Generating summary using Gemini model: {model_name}")
+                    model = genai.GenerativeModel(
+                        model_name=model_name,
+                        system_instruction=system_prompt
+                    )
+                    response = model.generate_content(
+                        f"Here is the context to synthesize:\n\n{context}",
+                        generation_config={"temperature": 0.3}
+                    )
+                    return response.text
+                except Exception as e:
+                    print(f"Gemini model {model_name} failed: {e}")
+                    last_error = e
+                    continue
+            
+            # If all Gemini models failed, fall back to Groq
+            print(f"All Gemini models failed. Falling back to Groq if available. Last error: {last_error}")
+            if self.groq_client:
+                return self._generate_groq(system_prompt, context)
+            return f"Error during Gemini generation: {str(last_error)}"
                 
         elif self.provider == "groq" and self.groq_client:
             try:
@@ -57,7 +75,8 @@ class LLMService:
             except Exception as e:
                 print(f"Groq generation failed: {e}. Falling back to Gemini if available.")
                 if GEMINI_API_KEY:
-                    self.provider = "gemini" # Update provider so subsequent calls use gemini
+                    # Switch to gemini for fallback
+                    self.provider = "gemini"
                     return self.generate_summary(system_prompt, context)
                 return f"Error during Groq generation: {str(e)}"
                 
