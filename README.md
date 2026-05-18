@@ -41,6 +41,8 @@ graph TD
 ## ✨ Key Features
 
 * **⚡ Real-time Observable Logs:** Custom-engineered live log terminal powered by **Redis Pub/Sub** and **Server-Sent Events (SSE)**. Background worker tasks stream UNIX-style logs to the UI dynamically during execution.
+* **🎭 Multi-Agent Persona Profiles:** Tailor research runs by choosing custom analytical personas (**General Analyst**, **Academic Reviewer**, **Financial Auditor**, or **Technical Architect**) to dictate writing tone, specialized formatting (e.g., SWOT, scientific citations, system designs), and analytical prompts.
+* **🕒 Temporal Delta Tracking:** Run updates on completed research jobs, chronologically linking them using self-referencing database models. View comparative side-by-side **split-screen diffs** and slide out an **AI-powered Delta analysis drawer** that tags changes (additions `[+]`, modifications `[Δ]`, deprecations `[-]`, and verified stable findings `[✓]`).
 * **🌐 Intelligent Search & Scraping:** Integrates with the **Tavily Search API** to identify high-quality sources, followed by a multi-threaded parallel web scraping pipeline utilizing **BeautifulSoup4** to sanitize content.
 * **🛡️ Semantic Context Deduplication (RAG):** Scraped web text is parsed, chunked, vectorized using **SentenceTransformers (`all-MiniLM-L6-v2`)**, and cross-compared in a local **ChromaDB** database to eliminate redundant articles and boilerplates.
 * **🤖 Multi-Provider LLM Orchestrator:** Implements an intelligent, rate-limit immune LLM synthesiser. Defaulting to **Google Gemini 1.5/2.0** for massive **1 million token context windows** and falling back seamlessly to **Groq (Llama-3.1-8B)** if needed.
@@ -215,10 +217,11 @@ npm run dev -- --port 5175
 * `GET /api/auth/me` — Retrieve current authenticated user profile.
 
 ### 🧠 Research Pipeline Endpoints
-* `POST /api/research/start` — Starts a research task. Launches an async pipeline background process.
+* `POST /api/research/start` — Starts a research task. Launches an async pipeline background process. Accepts optional `parent_job_id` UUID inside the request body payload to sequentially link and version research iterations.
 * `GET /api/research/jobs` — Lists all current and past research tasks for a user.
 * `GET /api/research/{job_id}` — Gets detailed metadata, scraped sources, and generated report markdown for a specific job.
 * `GET /api/research/{job_id}/stream` — **SSE (Server-Sent Events)** streaming log console endpoint.
+* `GET /api/research/{job_id}/compare` — Performs an AI-powered temporal comparison (Delta report) between a child job and its parent job, generating a structured Markdown analysis mapping changes.
 * `GET /api/research/{job_id}/pdf` — Compiles and downloads a print-ready PDF of the research.
 * `DELETE /api/research/{job_id}` — Deletes the research job, vector store embeddings, scraped source logs, and database records.
 
@@ -279,10 +282,6 @@ sequenceDiagram
 CortexMCP uses PostgreSQL for relational metadata tracking. All primary keys utilize robust `UUIDs`.
 
 ```
-========================================================================================
-                                      DATABASE MODEL
-========================================================================================
-
    [users]
    ---------
    - id (UUID, PK)
@@ -297,8 +296,9 @@ CortexMCP uses PostgreSQL for relational metadata tracking. All primary keys uti
    ----------------
    - id (UUID, PK)
    - user_id (UUID, FK -> users.id)
-   - query (Text)
-   - depth (String)
+   - parent_job_id (UUID, FK -> research_jobs.id, Nullable) <---+ Self-Referencing Loop
+   - query (Text)                                              |
+   - depth (String)                                            |
    - status (String: SEARCHING, SCRAPING, SUMMARIZING, JOB_FINISHED, FAILED)
    - progress (Integer)
    - settings (JSONB)
@@ -332,6 +332,7 @@ CortexMCP uses PostgreSQL for relational metadata tracking. All primary keys uti
 | **Separated API and Worker Containers** | Isolates FastAPI HTTP request processes from CPU/Network-bound vector calculations and multi-threaded scraping tasks, protecting API latency. |
 | **Redis Pub/Sub SSE Pipeline** | Replaces heavy polling databases or costly third-party systems (like LangSmith) with zero-cost, high-speed, dynamic terminal logging outputs directly from workers. |
 | **ChromaDB Context Deduplication** | Web scrapes are highly redundant. Local text chunking and similarity analysis ensure the LLM receives only unique facts, saving context tokens and optimizing synthesis. |
+| **Self-Referencing Temporal Versioning** | Relates successive iterations of research runs directly in the database (`parent_job_id`), preserving full comparative context logs instead of simple destructive document overrides. |
 | **Dual Gemini/Groq LLM Fallback** | Gemini provides a massive 1 million token context, ideal for large RAG context sizes. The Groq API acts as a high-speed standby fallback in case of rate limits or service outages. |
 | **Vite Dev Server Port `5175`** | Avoids local conflicts with default React Vite runs (`5174`/`5173`) on standard full-stack development setups. |
 
