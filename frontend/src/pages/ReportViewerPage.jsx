@@ -53,6 +53,24 @@ export default function ReportViewerPage() {
     }
   };
 
+  const handleDownloadDocx = async () => {
+    try {
+      const response = await api.get(`/research/${id}/docx`, {
+        responseType: 'blob'
+      });
+      
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `CortexMCP_Report_${id.substring(0, 8)}.docx`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (err) {
+      alert('Failed to download DOCX. Please try again.');
+    }
+  };
+
   if (loading && !job) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[50vh] space-y-4">
@@ -99,13 +117,22 @@ export default function ReportViewerPage() {
         </div>
 
         {isFinished && hasReport && (
-          <button
-            onClick={handleDownloadPDF}
-            className="btn-primary inline-flex items-center gap-2"
-          >
-            <Download className="w-4 h-4" />
-            Export PDF
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={handleDownloadPDF}
+              className="btn-primary inline-flex items-center gap-2 text-sm py-2.5 px-4"
+            >
+              <Download className="w-4 h-4" />
+              Export PDF
+            </button>
+            <button
+              onClick={handleDownloadDocx}
+              className="bg-white/[0.06] hover:bg-white/[0.1] text-white border border-white/[0.1] rounded-xl font-medium inline-flex items-center gap-2 text-sm py-2.5 px-4 transition-all"
+            >
+              <Download className="w-4 h-4" />
+              Download DOCX
+            </button>
+          </div>
         )}
       </div>
 

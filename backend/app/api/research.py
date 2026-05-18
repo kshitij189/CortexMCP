@@ -215,6 +215,179 @@ def download_research_pdf(
     )
 
 
+@router.get("/{job_id}/docx", status_code=200)
+def download_research_docx(
+    job_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Generate and return a Microsoft Word DOCX version of the research report."""
+    job = research_repo.get_job(db, job_id, str(current_user.id))
+    if not job or not job.report:
+        raise HTTPException(status_code=404, detail="Report not found or not finished")
+
+    from io import BytesIO
+    import re
+    from docx import Document
+    from docx.shared import Pt, Inches, RGBColor
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
+    from fastapi.responses import StreamingResponse
+
+    def parse_styled_text(paragraph, text: str):
+        # Splitting by markdown bold (**) and italic (*) syntax
+        parts = re.split(r'(\*\*.*?\*\*|\*.*?\*)', text)
+        for part in parts:
+            if part.startswith('**') and part.endswith('**'):
+                run = paragraph.add_run(part[2:-2])
+                run.bold = True
+            elif part.startswith('*') and part.endswith('*'):
+                run = paragraph.add_run(part[1:-1])
+                run.italic = True
+            else:
+                paragraph.add_run(part)
+
+    def render_docx_table(doc, rows: list[str]):
+        parsed_rows = []
+        for r in rows:
+            cells = [c.strip() for c in r.split('|')[1:-1]]
+            if not cells:
+                continue
+            # Skip separator lines
+            if all(all(char == '-' for char in cell) or not cell for cell in cells):
+                continue
+            parsed_rows.append(cells)
+            
+        if not parsed_rows:
+            return
+            
+        cols_count = len(parsed_rows[0])
+        table = doc.add_table(rows=len(parsed_rows), cols=cols_count)
+        table.style = 'Light Shading Accent 1'
+        
+        for r_idx, cells in enumerate(parsed_rows):
+            row = table.rows[r_idx]
+            for c_idx, val in enumerate(cells):
+                if c_idx < len(row.cells):
+                    cell = row.cells[c_idx]
+                    cell.text = val
+                    
+                    # Style headers
+                    if r_idx == 0:
+                        for paragraph in cell.paragraphs:
+                            for run in paragraph.runs:
+                                run.bold = True
+                                run.font.color.rgb = RGBColor(255, 255, 255)
+                        # Dark blue background shading for headers
+                        shading_elm = parse_xml(f'<w:shd {nsdecls("w")} w:fill="1E3A8A"/>')
+                        cell._tc.get_or_add_tcPr().append(shading_elm)
+
+    try:
+        doc = Document()
+        
+        # Format margins (1 inch)
+        for section in doc.sections:
+            section.top_margin = Inches(1)
+            section.bottom_margin = Inches(1)
+            section.left_margin = Inches(1)
+            section.right_margin = Inches(1)
+
+        # Base normal paragraph styling (Calibri 11pt, charcoal text)
+        style_normal = doc.styles['Normal']
+        font = style_normal.font
+        font.name = 'Calibri'
+        font.size = Pt(11)
+        font.color.rgb = RGBColor(0x33, 0x33, 0x33)
+
+        # Right-aligned header
+        header = doc.sections[0].header
+        hp = header.paragraphs[0]
+        hp.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        hrun = hp.add_run("CortexMCP Autonomous Research Report")
+        hrun.font.name = 'Calibri'
+        hrun.font.size = Pt(8.5)
+        hrun.font.color.rgb = RGBColor(120, 120, 120)
+
+        lines = job.report.report_markdown.split('\n')
+        in_table = False
+        table_rows = []
+
+        for line in lines:
+            stripped = line.strip()
+
+            if in_table and not stripped.startswith('|'):
+                render_docx_table(doc, table_rows)
+                in_table = False
+                table_rows = []
+
+            if not stripped:
+                continue
+
+            # Title styles (H1, H2, H3)
+            if stripped.startswith('# '):
+                p = doc.add_paragraph()
+                p.paragraph_format.space_before = Pt(18)
+                p.paragraph_format.space_after = Pt(6)
+                p.paragraph_format.keep_with_next = True
+                run = p.add_run(stripped[2:])
+                run.bold = True
+                run.font.size = Pt(20)
+                run.font.color.rgb = RGBColor(0x1e, 0x3a, 0x8a)
+            elif stripped.startswith('## '):
+                p = doc.add_paragraph()
+                p.paragraph_format.space_before = Pt(14)
+                p.paragraph_format.space_after = Pt(4)
+                p.paragraph_format.keep_with_next = True
+                run = p.add_run(stripped[3:])
+                run.bold = True
+                run.font.size = Pt(16)
+                run.font.color.rgb = RGBColor(0x25, 0x63, 0xeb)
+            elif stripped.startswith('### '):
+                p = doc.add_paragraph()
+                p.paragraph_format.space_before = Pt(10)
+                p.paragraph_format.space_after = Pt(3)
+                p.paragraph_format.keep_with_next = True
+                run = p.add_run(stripped[4:])
+                run.bold = True
+                run.font.size = Pt(12)
+                run.font.color.rgb = RGBColor(0x3b, 0x82, 0xf6)
+            elif stripped.startswith('- ') or stripped.startswith('* ') or stripped.startswith('• '):
+                p = doc.add_paragraph(style='List Bullet')
+                p.paragraph_format.space_after = Pt(3)
+                p.paragraph_format.line_spacing = 1.15
+                parse_styled_text(p, stripped[2:])
+            elif stripped.startswith('|'):
+                in_table = True
+                table_rows.append(stripped)
+            else:
+                p = doc.add_paragraph()
+                p.paragraph_format.space_after = Pt(6)
+                p.paragraph_format.line_spacing = 1.15
+                parse_styled_text(p, stripped)
+
+        if in_table and table_rows:
+            render_docx_table(doc, table_rows)
+
+        docx_buffer = BytesIO()
+        doc.save(docx_buffer)
+        docx_buffer.seek(0)
+    except Exception as e:
+        import traceback
+        print(f"DOCX Generation failed: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"DOCX generation failed: {str(e)}")
+
+    filename = f"CortexMCP_Report_{job_id[:8]}.docx"
+
+    return StreamingResponse(
+        docx_buffer,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}"
+        }
+    )
+
+
 @router.get("/{job_id}/stream", status_code=200)
 def stream_research_progress(
     job_id: str,
