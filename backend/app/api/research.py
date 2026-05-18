@@ -133,26 +133,28 @@ def download_research_pdf(
     if not job or not job.report:
         raise HTTPException(status_code=404, detail="Report not found or not finished")
 
-    import markdown2
-    from xhtml2pdf import pisa
+    import markdown
+    from fpdf import FPDF
     from io import BytesIO
     from fastapi.responses import StreamingResponse
 
     # Convert Markdown to HTML
-    html_content = markdown2.markdown(job.report.report_markdown)
+    html_content = markdown.markdown(job.report.report_markdown, extensions=['extra', 'tables'])
     
     # Wrap in basic HTML structure for PDF styling
     full_html = f"""
     <html>
     <head>
         <style>
-            @page {{ size: letter portrait; margin: 2cm; }}
-            body {{ font-family: Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; }}
-            h1 {{ color: #1e3a8a; border-bottom: 2px solid #1e3a8a; padding-bottom: 5px; }}
-            h2 {{ color: #2563eb; margin-top: 20px; }}
-            h3 {{ color: #3b82f6; }}
-            pre {{ background-color: #f1f5f9; padding: 10px; border-radius: 5px; }}
-            code {{ background-color: #f1f5f9; padding: 2px 4px; border-radius: 3px; font-family: monospace; }}
+            h1 {{ color: #1e3a8a; font-family: helvetica; font-weight: bold; font-size: 22pt; margin-top: 15px; margin-bottom: 10px; }}
+            h2 {{ color: #2563eb; font-family: helvetica; font-weight: bold; font-size: 16pt; margin-top: 12px; margin-bottom: 8px; }}
+            h3 {{ color: #3b82f6; font-family: helvetica; font-weight: bold; font-size: 12pt; margin-top: 10px; margin-bottom: 6px; }}
+            p {{ font-family: helvetica; font-size: 10pt; line-height: 1.5; margin-bottom: 8px; color: #333333; }}
+            li {{ font-family: helvetica; font-size: 10pt; line-height: 1.5; color: #333333; }}
+            ul {{ margin-bottom: 8px; }}
+            table {{ width: 100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 10px; }}
+            th {{ background-color: #f1f5f9; font-family: helvetica; font-weight: bold; font-size: 9pt; border: 1px solid #cbd5e1; padding: 6px; text-align: left; }}
+            td {{ font-family: helvetica; font-size: 9pt; border: 1px solid #cbd5e1; padding: 6px; }}
         </style>
     </head>
     <body>
@@ -161,13 +163,33 @@ def download_research_pdf(
     </html>
     """
 
-    pdf_buffer = BytesIO()
-    pisa_status = pisa.CreatePDF(full_html, dest=pdf_buffer)
+    class CustomPDF(FPDF):
+        def header(self):
+            self.set_font('helvetica', 'B', 8)
+            self.set_text_color(120, 120, 120)
+            self.cell(0, 10, 'CortexMCP Autonomous Research Report', 0, 1, 'R')
+            self.ln(5)
 
-    if pisa_status.err:
-        raise HTTPException(status_code=500, detail="PDF generation failed")
+        def footer(self):
+            self.set_y(-15)
+            self.set_font('helvetica', 'I', 8)
+            self.set_text_color(120, 120, 120)
+            self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
 
-    pdf_buffer.seek(0)
+    try:
+        pdf = CustomPDF()
+        pdf.set_margin(15)
+        pdf.add_page()
+        pdf.set_font("helvetica", size=10)
+        pdf.write_html(full_html)
+        
+        pdf_bytes = pdf.output()
+        pdf_buffer = BytesIO(pdf_bytes)
+        pdf_buffer.seek(0)
+    except Exception as e:
+        import traceback
+        print(f"PDF Generation failed: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"PDF generation failed: {str(e)}")
     
     filename = f"CortexMCP_Report_{job_id[:8]}.pdf"
     
