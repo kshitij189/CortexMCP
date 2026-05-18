@@ -161,22 +161,14 @@ def download_research_pdf(
     # Convert Markdown to HTML
     html_content = markdown.markdown(sanitized_markdown, extensions=['extra', 'tables'])
     
-    # Wrap in basic HTML structure for PDF styling
+    # Inline style replacements for standard tags to look incredibly premium in fpdf2
+    html_content = html_content.replace("<h1>", '<h1 style="color: #1e3a8a;">')
+    html_content = html_content.replace("<h2>", '<h2 style="color: #2563eb;">')
+    html_content = html_content.replace("<h3>", '<h3 style="color: #3b82f6;">')
+    
+    # Wrap in basic HTML structure without style blocks which fpdf2 doesn't support
     full_html = f"""
     <html>
-    <head>
-        <style>
-            h1 {{ color: #1e3a8a; font-family: helvetica; font-weight: bold; font-size: 22pt; margin-top: 15px; margin-bottom: 10px; }}
-            h2 {{ color: #2563eb; font-family: helvetica; font-weight: bold; font-size: 16pt; margin-top: 12px; margin-bottom: 8px; }}
-            h3 {{ color: #3b82f6; font-family: helvetica; font-weight: bold; font-size: 12pt; margin-top: 10px; margin-bottom: 6px; }}
-            p {{ font-family: helvetica; font-size: 10pt; line-height: 1.5; margin-bottom: 8px; color: #333333; }}
-            li {{ font-family: helvetica; font-size: 10pt; line-height: 1.5; color: #333333; }}
-            ul {{ margin-bottom: 8px; }}
-            table {{ width: 100%; border-collapse: collapse; margin-top: 10px; margin-bottom: 10px; }}
-            th {{ background-color: #f1f5f9; font-family: helvetica; font-weight: bold; font-size: 9pt; border: 1px solid #cbd5e1; padding: 6px; text-align: left; }}
-            td {{ font-family: helvetica; font-size: 9pt; border: 1px solid #cbd5e1; padding: 6px; }}
-        </style>
-    </head>
     <body>
         {html_content}
     </body>
