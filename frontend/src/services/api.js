@@ -53,6 +53,7 @@ export const researchAPI = {
   listJobs: (params) => api.get('/research/jobs', { params }),
   getJob: (id) => api.get(`/research/${id}`),
   deleteJob: (id) => api.delete(`/research/${id}`),
+  getComparison: (id) => api.get(`/research/${id}/compare`),
 };
 
 export default api;

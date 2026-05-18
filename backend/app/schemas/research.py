@@ -32,6 +32,7 @@ class ResearchJobCreate(BaseModel):
     query: str = Field(min_length=3, max_length=1000)
     depth: ResearchDepth = ResearchDepth.STANDARD
     persona: Optional[str] = "general"
+    parent_job_id: Optional[str] = None
 
 
 class ResearchJobResponse(BaseModel):
@@ -45,6 +46,7 @@ class ResearchJobResponse(BaseModel):
     updated_at: datetime
     completed_at: Optional[datetime] = None
     persona: Optional[str] = "general"
+    parent_job_id: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -62,6 +64,7 @@ class ResearchJobResponse(BaseModel):
             updated_at=job.updated_at,
             completed_at=job.completed_at,
             persona=persona,
+            parent_job_id=str(job.parent_job_id) if job.parent_job_id else None,
         )
 
 

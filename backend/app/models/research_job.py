@@ -14,6 +14,7 @@ class ResearchJob(Base):
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
+    parent_job_id = Column(UUID(as_uuid=True), ForeignKey("research_jobs.id"), nullable=True, index=True)
     query = Column(Text, nullable=False)
     depth = Column(String(20), nullable=False, default="standard")  # basic | standard | deep
     status = Column(String(50), nullable=False, default="JOB_CREATED", index=True)
@@ -26,6 +27,7 @@ class ResearchJob(Base):
 
     # Relationships
     user = relationship("User", back_populates="research_jobs")
+    parent_job = relationship("ResearchJob", remote_side=[id], backref="child_jobs")
     scraped_sources = relationship("ScrapedSource", back_populates="research_job", cascade="all, delete-orphan")
     report = relationship("GeneratedReport", back_populates="research_job", uselist=False, cascade="all, delete-orphan")
     workflow_logs = relationship("WorkflowLog", back_populates="research_job", cascade="all, delete-orphan")

@@ -35,7 +35,8 @@ def start_research(
         user_id=str(current_user.id),
         query=data.query,
         depth=data.depth.value,
-        settings={"persona": data.persona}
+        settings={"persona": data.persona},
+        parent_job_id=data.parent_job_id,
     )
 
     # Phase 3: Queue Celery task
@@ -428,3 +429,66 @@ def stream_research_progress(
             
     from fastapi.responses import StreamingResponse
     return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
+@router.get("/{job_id}/compare", status_code=200)
+def compare_research_jobs(
+    job_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Generate an AI-powered comparison report (Delta report) between a child job and its parent job.
+    """
+    child_job = research_repo.get_job(db, job_id, str(current_user.id))
+    if not child_job:
+        raise HTTPException(status_code=404, detail="Research job not found")
+        
+    if not child_job.parent_job_id:
+        raise HTTPException(status_code=400, detail="This research job does not have a previous version to compare against")
+        
+    parent_job = research_repo.get_job(db, str(child_job.parent_job_id), str(current_user.id))
+    if not parent_job:
+        raise HTTPException(status_code=404, detail="Previous version of research job not found")
+        
+    if child_job.status != "JOB_FINISHED" or not child_job.report:
+        raise HTTPException(status_code=400, detail="The latest research job report has not finished generating yet")
+        
+    if parent_job.status != "JOB_FINISHED" or not parent_job.report:
+        raise HTTPException(status_code=400, detail="The previous research job report has no finished content to compare")
+        
+    # Generate the comparison report using LLM Service
+    from app.services.llm_service import llm_service
+    
+    system_prompt = (
+        "You are an expert technical intelligence analyst. Your task is to perform a detailed "
+        "comparative temporal analysis between two versions of a research report on the same topic.\n\n"
+        "Analyze what has changed from the Previous Report to the Current Report. Focus on:\n"
+        "1. NEW FINDINGS & ADDITIONS: Brand new information, events, statistics, or capabilities discovered.\n"
+        "2. UPDATED/CHANGED INFORMATION: Corrections, updates on statuses, changes in metrics, or shifts in timeline/sentiment.\n"
+        "3. DEPRECATED OR REPLACED DETAILS: Information that has become obsolete, corrected, or superseded in the new version.\n"
+        "4. STABLE INSIGHTS: High-confidence key findings that remain unchanged and validated across both reports.\n\n"
+        "Format the output strictly as a highly structured, professional, and visually stunning Markdown report. "
+        "Use distinct indicators/emojis such as '[+]' for additions, '[Δ]' for updates, '[-]' for deprecations, "
+        "and '[✓]' for verified stable insights. Make the analysis actionable, crisp, and analytical."
+    )
+    
+    context = (
+        f"RESEARCH TOPIC/QUERY: {child_job.query}\n\n"
+        f"--- PREVIOUS REPORT ---\n{parent_job.report.report_markdown}\n\n"
+        f"--- CURRENT REPORT ---\n{child_job.report.report_markdown}\n"
+    )
+    
+    try:
+        delta_markdown = llm_service.generate_summary(system_prompt, context)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate comparison: {str(e)}")
+        
+    return {
+        "child_job_id": str(child_job.id),
+        "parent_job_id": str(parent_job.id),
+        "query": child_job.query,
+        "parent_report": parent_job.report.report_markdown,
+        "child_report": child_job.report.report_markdown,
+        "delta_report": delta_markdown
+    }
