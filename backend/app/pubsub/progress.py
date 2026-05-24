@@ -1,11 +1,18 @@
 import json
+import ssl
 import redis
 from app.config import settings
 
 class ProgressPubSub:
     def __init__(self):
         # We use a synchronous Redis client to stay compatible with Celery and FastAPI sync routes.
-        self.redis_client = redis.Redis.from_url(settings.REDIS_URL, decode_responses=True)
+        # Bypass SSL validation checks for secure cloud connections (e.g. Upstash) to prevent verification errors.
+        ssl_cert_reqs = ssl.CERT_NONE if settings.REDIS_URL.startswith("rediss://") else None
+        self.redis_client = redis.Redis.from_url(
+            settings.REDIS_URL,
+            decode_responses=True,
+            ssl_cert_reqs=ssl_cert_reqs
+        )
 
     def publish_progress(self, job_id: str, status: str, progress: int, message: str = ""):
         """Publishes a progress update to a specific job channel."""

@@ -68,8 +68,9 @@ Since Render only allows one free web service per account and charges for "Backg
    * **Instance Type:** **Free**
    * **Region:** Same region as Neon / Upstash if possible
    * **Runtime:** `Docker`
+   * **Root Directory:** `backend` *(Crucial: pointing to the backend subfolder)*
+   * **Docker Path:** `Dockerfile.render` *(Crucial: relative path inside the backend folder)*
    * **Docker Command:** *(Leave blank - it will default to `CMD` in Dockerfile.render)*
-   * **Docker Path:** `backend/Dockerfile.render` *(Crucial: pointing to the render-specific Dockerfile)*
 5. Click **Advanced** and add the following **Environment Variables**:
    * `DATABASE_URL`: *[Insert the PostgreSQL connection string from Neon]*
    * `REDIS_URL`: *[Insert the Redis URL from Upstash]*
@@ -96,7 +97,13 @@ Render Static Sites are 100% free and served over a high-speed CDN. The build pr
 5. Click **Advanced** and add the following **Environment Variable**:
    * **`VITE_API_URL`**: `https://cortexmcp-backend.onrender.com/api` *(Make sure to replace this with your actual Render backend URL, appending `/api` at the end!)*
 6. Click **Create Static Site**.
-7. Render will install Vite, build the production assets, and deploy the frontend static site. 
+7. **Configure Redirects/Rewrites (Crucial for React Router/SPA support):**
+   * After the static site is created, go to the **Redirects/Rewrites** tab in the service's left sidebar.
+   * Click **Add Rule** and enter:
+     * **Source:** `/*`
+     * **Destination:** `/index.html`
+     * **Action:** `Rewrite`
+   * Click **Save**. *(This ensures that refreshing pages like `/dashboard` or `/report/:id` loads the React app correctly instead of returning a 404 Not Found error).*
 8. Once finished, visit your live static site URL (e.g., `https://cortexmcp-frontend.onrender.com`) to register, log in, select personas, and execute async research updates completely in the cloud!
 
 ---
