@@ -6,8 +6,8 @@ from app.config import settings
 class ProgressPubSub:
     def __init__(self):
         # We use a synchronous Redis client to stay compatible with Celery and FastAPI sync routes.
-        # Bypass SSL validation checks for secure cloud connections (e.g. Upstash) to prevent verification errors.
-        ssl_cert_reqs = ssl.CERT_NONE if settings.REDIS_URL.startswith("rediss://") else None
+        # Enforce SSL validation checks for secure cloud connections (e.g. Upstash) to satisfy protocol handshake.
+        ssl_cert_reqs = ssl.CERT_REQUIRED if settings.REDIS_URL.startswith("rediss://") else None
         self.redis_client = redis.Redis.from_url(
             settings.REDIS_URL,
             decode_responses=True,
