@@ -59,18 +59,25 @@ def run_research_pipeline(self, job_id: str):
 
         from app.services.llm_service import llm_service
         from app.prompts.summarize import PERSONA_PROMPTS
-        from app.services.dedup_service import dedup_service
+        from app.config import settings
 
-        # 3. Execute Summarization with RAG Deduplication
+        # 3. Execute Summarization
         research_repo.update_job_status(db, job_id, status="SUMMARIZING", progress=80)
-        research_repo.add_workflow_log(db, job_id, "SUMMARIZE", "Deduplicating and curating context for LLM synthesis...")
         
         # Retrieve all scraped sources for this job
         sources = research_repo.get_scraped_sources(db, job_id)
         raw_texts = [source.raw_content for source in sources if source.raw_content]
         
-        # Deduplicate and extract highly unique chunks
-        unique_context = dedup_service.get_unique_context(job_id, raw_texts)
+        # Vector dedup uses PyTorch + SentenceTransformers (~300MB RAM).
+        # On memory-constrained hosts (Render 512MB free tier), skip it and send raw text to LLM.
+        if settings.ENABLE_VECTOR_DEDUP:
+            research_repo.add_workflow_log(db, job_id, "SUMMARIZE", "Deduplicating and curating context for LLM synthesis...")
+            from app.services.dedup_service import dedup_service
+            unique_context = dedup_service.get_unique_context(job_id, raw_texts)
+        else:
+            research_repo.add_workflow_log(db, job_id, "SUMMARIZE", "Skipping vector dedup (low-memory mode). Concatenating raw context...")
+            # Simple truncation: join all texts, capped at ~100K chars to stay within LLM limits
+            unique_context = "\n---\n".join(raw_texts)[:100000]
         
         # Determine the agent persona to use
         persona = job.settings.get("persona", "general") if job.settings else "general"

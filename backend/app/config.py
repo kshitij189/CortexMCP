@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     # ─── ChromaDB ───
     CHROMADB_PATH: str = "./chroma_data"
 
+    # ─── Feature Flags ───
+    ENABLE_VECTOR_DEDUP: bool = True  # Set to False on memory-constrained hosts (e.g. Render 512MB free tier)
+
     @property
     def cors_origins_list(self) -> List[str]:
         cleaned_origins = []
