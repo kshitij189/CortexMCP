@@ -115,6 +115,34 @@ def create_app() -> FastAPI:
         result["status"] = "ready" if healthy else "not_ready"
         return result
 
+    @app.get("/health/llm", tags=["Health"])
+    def health_llm():
+        """Reports which models each configured LLM provider actually serves.
+
+        Model ids get retired by providers without notice, which is how report
+        generation started failing; this shows the live catalogue so a stale
+        GEMINI_MODEL/GROQ_MODEL override is obvious. Never returns key material.
+        """
+        from app.services.llm_service import llm_service
+
+        result = {"active_provider": llm_service.provider}
+
+        try:
+            result["gemini_models"] = llm_service.available_gemini_models()
+        except Exception as e:
+            result["gemini_models"] = f"{type(e).__name__}: {e}"
+
+        try:
+            result["groq_models"] = llm_service.available_groq_models()
+        except Exception as e:
+            result["groq_models"] = f"{type(e).__name__}: {e}"
+
+        result["configured_overrides"] = {
+            "GEMINI_MODEL": llm_service.gemini_model or None,
+            "GROQ_MODEL": llm_service.groq_model or None,
+        }
+        return result
+
     # ─── Startup: Create tables (dev convenience, Alembic for production) ───
     @app.on_event("startup")
     def on_startup():
