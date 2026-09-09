@@ -18,14 +18,13 @@ if settings.REDIS_URL.startswith("rediss://"):
         "ssl_cert_reqs": ssl.CERT_REQUIRED
     }
 
-# Upstash's free tier allows only 10,000 Redis commands per day. Kombu's default
-# brpop_timeout of 1 second makes an idle worker issue ~86,400 BRPOP calls a day,
-# which burns through the whole quota within minutes and then makes every
-# enqueue fail with "max daily request limit exceeded". Lengthening the poll and
-# switching off the chatty extras (remote control pidbox, event stream, result
-# writes) keeps a permanently-running worker inside the free allowance, at the
-# cost of up to CELERY_BROKER_POLLING_INTERVAL seconds of task pickup latency.
-polling_interval = float(os.getenv("CELERY_BROKER_POLLING_INTERVAL", "15"))
+# Kombu polls the broker with BRPOP once per interval, so an idle worker issues
+# ~86,400 commands a day at the default of 1 second. That is free against the
+# in-container Redis this deploys with, but it would exhaust a metered hosted
+# broker's allowance on its own — Upstash's free tier, for instance, caps at
+# 10,000 commands per day. Raise this to 15 or more when pointing REDIS_URL at
+# such a service, trading task pickup latency for command budget.
+polling_interval = float(os.getenv("CELERY_BROKER_POLLING_INTERVAL", "1"))
 
 celery_app.conf.update(
     task_serializer="json",

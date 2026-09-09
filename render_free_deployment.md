@@ -13,7 +13,7 @@ To achieve a 100% free production deployment, we map the services as follows:
 1. **Frontend (Vite React):** **Render Static Site** *(100% Free - unlimited bandwidth)*
 2. **API & Background Worker (FastAPI & Celery):** **Render Web Service** *(Free Tier - runs both API & Celery inside a single container using a startup script to bypass background worker charges!)*
 3. **Database (PostgreSQL 16):** **Neon.tech** *(Free Tier - 0.5 GiB storage, serverless autoscaling)*
-4. **Queue Broker & Cache (Redis):** **Upstash Redis** *(Free Tier - up to 10,000 commands/day, serverless)*
+4. **Queue Broker & Cache (Redis):** **Embedded in the backend container** *(no external service, no command quota)*
 
 ---
 
@@ -37,12 +37,24 @@ The following files have been added to your codebase to support hosting:
 
 ## 🚀 Step-by-Step Free Deployment Blueprint
 
-### Step 1: Spin Up a Free Redis Database on Upstash
-1. Go to [Upstash Console](https://console.upstash.com/) and register a free account.
-2. Click **Create Database**.
-3. Set the name to `cortexmcp-redis` and select your nearest region.
-4. Keep the **Free Tier** selected (10k requests/day).
-5. Scroll down to the **URIs** section and copy the **Redis URL** (starts with `rediss://default:...`).
+### Step 1: Redis — Nothing to Set Up
+
+Redis runs **inside the backend container** alongside the API and the Celery worker,
+so there is no Redis service to create and no `REDIS_URL` to configure. `start.sh`
+boots `redis-server` on `127.0.0.1:6379` before starting anything that needs it.
+
+Persistence is deliberately off. Everything durable — job status, scraped sources,
+generated reports — lives in Postgres; Redis only holds the in-flight task queue and
+the progress pub/sub channel, so losing it on a restart costs nothing but jobs that
+were mid-flight.
+
+**Using an external Redis instead (optional).** Set `REDIS_URL` on the web service and
+it will be used, but only if it actually answers on boot — if it does not, `start.sh`
+logs the reason and falls back to the embedded instance rather than letting every
+research request fail. If that external broker is metered, also set
+`CELERY_BROKER_POLLING_INTERVAL` to `15` or higher: Celery polls the queue once per
+second by default, which is ~86,400 commands a day and on its own exceeds, for
+example, Upstash's 10,000/day free allowance.
 
 ---
 
@@ -66,14 +78,13 @@ Since Render only allows one free web service per account and charges for "Backg
 4. Configure the Web Service:
    * **Name:** `cortexmcp-backend`
    * **Instance Type:** **Free**
-   * **Region:** Same region as Neon / Upstash if possible
+   * **Region:** Same region as Neon if possible
    * **Runtime:** `Docker`
    * **Root Directory:** `backend` *(Crucial: pointing to the backend subfolder)*
    * **Docker Path:** `Dockerfile.render` *(Crucial: relative path inside the backend folder)*
    * **Docker Command:** *(Leave blank - it will default to `CMD` in Dockerfile.render)*
 5. Click **Advanced** and add the following **Environment Variables**:
    * `DATABASE_URL`: *[Insert the PostgreSQL connection string from Neon]*
-   * `REDIS_URL`: *[Insert the Redis URL from Upstash]*
    * `TAVILY_API_KEY`: *[Your Tavily Search Key]*
    * `GEMINI_API_KEY`: *[Your Gemini LLM Key]*
    * `GROQ_API_KEY`: *[Your Groq Fallback Key]*

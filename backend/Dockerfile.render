@@ -3,9 +3,12 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Install system dependencies
+# redis-server runs in-container as the Celery broker (see start.sh), which avoids
+# depending on an external managed instance that can be deleted or rate-limited.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
+    redis-server \
     && rm -rf /var/lib/apt/lists/*
 
 # Pre-install CPU version of PyTorch to save massive download time and image size
