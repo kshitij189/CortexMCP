@@ -41,7 +41,27 @@ def start_research(
 
     # Phase 3: Queue Celery task
     from app.workers.research_task import run_research_pipeline
-    run_research_pipeline.delay(str(job.id))
+
+    try:
+        run_research_pipeline.delay(str(job.id))
+    except Exception as e:
+        # The job row already exists, so leaving it in JOB_CREATED would strand it
+        # as a permanently pending item in the dashboard. Mark it failed and tell
+        # the caller why instead of surfacing a bare 500.
+        research_repo.update_job_status(
+            db,
+            str(job.id),
+            status="FAILED",
+            progress=0,
+            error_message=f"Could not queue research task: {type(e).__name__}: {e}",
+        )
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Research queue is unavailable, so the job could not be started. "
+                f"Broker error: {type(e).__name__}: {e}"
+            ),
+        )
 
     return ResearchJobResponse.from_orm_job(job)
 

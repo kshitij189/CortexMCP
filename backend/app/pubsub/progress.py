@@ -7,11 +7,18 @@ class ProgressPubSub:
     def __init__(self):
         # We use a synchronous Redis client to stay compatible with Celery and FastAPI sync routes.
         # Enforce SSL validation checks for secure cloud connections (e.g. Upstash) to satisfy protocol handshake.
-        ssl_cert_reqs = ssl.CERT_REQUIRED if settings.REDIS_URL.startswith("rediss://") else None
+        # ssl_cert_reqs is only accepted by redis-py's SSLConnection, so passing it
+        # for a plain redis:// URL (local dev, docker-compose) raises a TypeError.
+        ssl_kwargs = {}
+        if settings.REDIS_URL.startswith("rediss://"):
+            ssl_kwargs["ssl_cert_reqs"] = ssl.CERT_REQUIRED
+
         self.redis_client = redis.Redis.from_url(
             settings.REDIS_URL,
             decode_responses=True,
-            ssl_cert_reqs=ssl_cert_reqs
+            socket_connect_timeout=10,
+            socket_timeout=10,
+            **ssl_kwargs,
         )
 
     def publish_progress(self, job_id: str, status: str, progress: int, message: str = ""):

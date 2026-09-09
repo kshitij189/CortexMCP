@@ -3,13 +3,18 @@ FastAPI application entry point.
 Configures CORS, lifespan events, and route registration.
 """
 
+import logging
+import traceback
 from contextlib import contextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.database import engine, Base
 from app.api import api_router
+
+logger = logging.getLogger("cortexmcp")
 
 # Import all models so Base.metadata knows about them
 import app.models  # noqa: F401
@@ -22,6 +27,29 @@ def create_app() -> FastAPI:
         description="Autonomous async research & report generation system",
         version="1.0.0",
     )
+
+    # ─── Unhandled error handling ───
+    # Starlette's default 500 handler sits *outside* every user middleware, so a
+    # crash produces a bare "Internal Server Error" with no CORS headers. The
+    # browser then reports it as "blocked by CORS policy" and the real cause is
+    # invisible. Registering this before CORSMiddleware puts it *inside* the CORS
+    # layer (add_middleware prepends, so the last one added is outermost), which
+    # means the JSON response below still gets Access-Control-Allow-Origin.
+    @app.middleware("http")
+    async def catch_unhandled_errors(request: Request, call_next):
+        try:
+            return await call_next(request)
+        except Exception as exc:
+            logger.error(
+                "Unhandled error on %s %s\n%s",
+                request.method,
+                request.url.path,
+                traceback.format_exc(),
+            )
+            return JSONResponse(
+                status_code=500,
+                content={"detail": f"{type(exc).__name__}: {exc}"},
+            )
 
     # ─── CORS ───
     origins = settings.cors_origins_list
@@ -56,6 +84,36 @@ def create_app() -> FastAPI:
             return {"status": "ready", "database": "connected"}
         except Exception as e:
             return {"status": "not_ready", "database": str(e)}
+
+    @app.get("/health/redis", tags=["Health"])
+    def health_redis():
+        """Readiness check — verifies Redis and the Celery broker separately.
+
+        The two use different clients (redis-py directly for pub/sub, kombu for
+        the queue), so they can fail independently — most often when Upstash's
+        free daily command quota runs out.
+        """
+        result = {}
+
+        try:
+            from app.pubsub.progress import progress_pubsub
+            progress_pubsub.redis_client.ping()
+            result["redis"] = "connected"
+        except Exception as e:
+            result["redis"] = f"{type(e).__name__}: {e}"
+
+        try:
+            from app.workers.celery_app import celery_app
+            conn = celery_app.connection_for_write()
+            conn.ensure_connection(max_retries=0, timeout=5)
+            conn.release()
+            result["celery_broker"] = "connected"
+        except Exception as e:
+            result["celery_broker"] = f"{type(e).__name__}: {e}"
+
+        healthy = result["redis"] == "connected" and result["celery_broker"] == "connected"
+        result["status"] = "ready" if healthy else "not_ready"
+        return result
 
     # ─── Startup: Create tables (dev convenience, Alembic for production) ───
     @app.on_event("startup")
