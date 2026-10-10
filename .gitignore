@@ -66,3 +66,6 @@ Thumbs.db
 *.sw?
 *.log
 logs/
+
+# ─── Interview Prep ───
+CortexMCP_Interview_QA.md
